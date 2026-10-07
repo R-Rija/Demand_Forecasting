@@ -23,6 +23,7 @@ import {
   Sun,
   Moon,
   Leaf,
+  ArrowRight,
   Check,
   Ban,
   Inbox,
