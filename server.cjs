@@ -74,7 +74,7 @@ async function executeSql(query) {
         pgQuery = pgQuery.replace(/DATEADD\(DAY,\s*-7,\s*CAST\(CONVERT\(VARCHAR,\s*\(SELECT MAX\(DateKey\) FROM public\.FactWarehouseInventory\),\s*112\)\s*AS DATE\)\)/gi, 
             "(TO_DATE((SELECT MAX(\"DateKey\") FROM public.\"FactWarehouseInventory\")::text, 'YYYYMMDD') - INTERVAL '7 days')");
     }
-    const tables = ['DimProduct', 'DimStore', 'DimWarehouse', 'FactWarehouseInventory', 'FactSales', 'FactForecast', 'FactAllocation', 'AgentActionLog', 'GuardrailConfig', 'RegionSafetyStock', 'FactForecastAccuracy'];
+    const tables = ['DimDate', 'DimProduct', 'DimStore', 'DimWarehouse', 'FactInventory', 'FactWarehouseInventory', 'FactSales', 'FactForecast', 'FactAllocation', 'AgentActionLog', 'GuardrailConfig', 'RegionSafetyStock', 'FactForecastAccuracy'];
     for(const t of tables) { pgQuery = pgQuery.replace(new RegExp(`public\\.${t}`, 'gi'), `public."${t}"`); }
     
     const views = ['vw_ForecastVsActual', 'vw_CurrentStockStatus', 'vw_WarehouseAvailable', 'vw_StoreCapacityUsage', 'vw_AnomalyCandidates', 'vw_ForecastAccuracySummary'];
