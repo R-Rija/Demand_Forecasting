@@ -58,6 +58,10 @@ const config = {
 let isExecuting = false;
 let queryQueue = [];
 
+const pool = new Pool({
+  connectionString: process.env.SUPABASE_URI,
+  ssl: { rejectUnauthorized: false }
+});
 
 async function executeSql(query) {
   try {
