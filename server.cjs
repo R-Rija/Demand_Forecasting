@@ -76,6 +76,10 @@ async function executeSql(query) {
     }
     const tables = ['DimProduct', 'DimStore', 'DimWarehouse', 'FactWarehouseInventory', 'FactSales', 'FactForecast', 'FactAllocation', 'AgentActionLog', 'GuardrailConfig', 'RegionSafetyStock', 'FactForecastAccuracy'];
     for(const t of tables) { pgQuery = pgQuery.replace(new RegExp(`public\\.${t}`, 'gi'), `public."${t}"`); }
+    
+    const views = ['vw_ForecastVsActual', 'vw_CurrentStockStatus', 'vw_WarehouseAvailable', 'vw_StoreCapacityUsage', 'vw_AnomalyCandidates', 'vw_ForecastAccuracySummary'];
+    for(const v of views) { pgQuery = pgQuery.replace(new RegExp(`public\\.${v}`, 'gi'), `public."${v}"`); }
+    
     const { rows } = await pool.query(pgQuery);
     
     // Map lowercase Postgres return keys back to their exact original casing in the query!
