@@ -388,7 +388,7 @@ function OverviewTab({
         {metrics.length === 0 && (
           <div className="col-span-full">
             <Card theme={T}>
-              <EmptyState theme={T} title="No KPI data yet" hint="Start the backend on port 3001 to load live metrics from the SQL Server." />
+              <EmptyState theme={T} title="No KPI data yet" hint="Start the backend on port 3001 to load live metrics from Supabase Postgres." />
             </Card>
           </div>
         )}
@@ -648,7 +648,7 @@ function RecommendationsTab({
 
       {loading && (
         <div className="flex items-center gap-2 py-8 justify-center" style={{ color: T.sub }}>
-          <Loader2 size={16} className="animate-spin" /> Loading {filter} recommendations from SQL Server...
+          <Loader2 size={16} className="animate-spin" /> Loading {filter} recommendations from Supabase Postgres...
         </div>
       )}
 
@@ -1305,7 +1305,7 @@ export default function ComprehensiveRetailCommandCenter() {
         setRules(resRules.error ? { automation: [], guardrails: [] } : resRules);
         setPendingCount(resCount?.count ?? 0);
       } catch (err) {
-        console.error("Failed to fetch data from SQL Server backend", err);
+        console.error("Failed to fetch data from Supabase Postgres backend", err);
       }
     };
     fetchData();
@@ -1354,7 +1354,7 @@ export default function ComprehensiveRetailCommandCenter() {
             </div>
             <div className="min-w-0">
               <h1 className="crcc-serif text-xl font-semibold truncate" style={{ color: T.text }}>Cognitive Retail Command Center</h1>
-              <p className="text-xs mt-0.5" style={{ color: T.sub }}>Live data from the SQL Server</p>
+              <p className="text-xs mt-0.5" style={{ color: T.sub }}>Live data from Supabase Postgres</p>
             </div>
           </div>
 
