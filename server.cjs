@@ -718,6 +718,7 @@ app.post('/api/recommendations/:id/status', async (req, res) => {
       UPDATE dbo.FactAllocation
       SET Status = '${newStatus}',
           ApprovedQty = CASE WHEN '${newStatus}' = 'APPROVED' THEN RecommendedQty ELSE 0 END,
+          ApprovalType = 'Human',
           DecidedBy = 'Human Operator',
           DecidedAt = NOW()
       WHERE AllocationKey = ${parseInt(allocationKey)}
@@ -770,7 +771,9 @@ app.post('/api/recommendations/:id/status', async (req, res) => {
     try {
       console.log(`[EMAIL] Attempting to send email. USER=${process.env.EMAIL_USER}, PASS_SET=${!!process.env.EMAIL_PASS}`);
       const transporter = nodemailer.createTransport({
-        service: 'gmail',
+        host: 'smtp.gmail.com',
+        port: 465,
+        secure: true,
         auth: {
           user: process.env.EMAIL_USER,
           pass: (process.env.EMAIL_PASS || '').replace(/\s+/g, '')
