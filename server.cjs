@@ -1158,7 +1158,7 @@ const path = require('path');
 app.use(express.static(path.join(__dirname, 'dist')));
 
 // Handle React routing, return all requests to React app
-app.get('*', (req, res) => {
+app.use((req, res, next) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
