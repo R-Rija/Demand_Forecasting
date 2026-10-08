@@ -33,7 +33,7 @@ let runPipeline;
   }
 })();
 
-// SQL Server Authentication for local SSMS RetailAI
+// Supabase Postgres Authentication for local SSMS RetailAI
 const config = {
   server: process.env.DB_SERVER || 'localhost',
   authentication: {
@@ -417,7 +417,7 @@ app.get('/api/recommendations', async (req, res) => {
 // ---------------------------------------------------------------------------
 // API: /api/kpi
 // Source: vw_ForecastAccuracySummary, FactWarehouseInventory, DimProduct, vw_AnomalyCandidates
-// All values computed from real SQL Server data
+// All values computed from real Supabase Postgres data
 // ---------------------------------------------------------------------------
 app.get('/api/kpi', async (req, res) => {
   try {
@@ -478,7 +478,7 @@ app.get('/api/kpi', async (req, res) => {
 
 // ---------------------------------------------------------------------------
 // API: /api/rules (Guardrails tab)
-// Source: dbo.GuardrailConfig — automation rules and guardrails from SQL Server
+// Source: dbo.GuardrailConfig — automation rules and guardrails from Supabase Postgres
 // ---------------------------------------------------------------------------
 app.get('/api/rules', async (req, res) => {
   try {
@@ -698,7 +698,7 @@ app.get('/api/history', async (req, res) => {
 
 // ---------------------------------------------------------------------------
 // API: POST /api/recommendations/:id/status
-// Updates FactAllocation status in SQL Server
+// Updates FactAllocation status in Supabase Postgres
 // ---------------------------------------------------------------------------
 app.post('/api/recommendations/:id/status', async (req, res) => {
   try {
@@ -843,7 +843,7 @@ app.post('/api/recommendations/:id/status', async (req, res) => {
       console.error("[EMAIL] ❌ Failed to send email:", emailErr.message);
     }
 
-    res.json({ success: true, message: `Allocation ${allocationKey} updated to ${newStatus} in SQL Server.` });
+    res.json({ success: true, message: `Allocation ${allocationKey} updated to ${newStatus} in Supabase Postgres.` });
   } catch (error) {
     console.error("Status update failed:", error.message);
     res.status(500).json({ error: error.message });
@@ -852,7 +852,7 @@ app.post('/api/recommendations/:id/status', async (req, res) => {
 
 // ---------------------------------------------------------------------------
 // API: POST /api/run-pipeline
-// Logs a pipeline run event to AgentActionLog in SQL Server
+// Logs a pipeline run event to AgentActionLog in Supabase Postgres
 // ---------------------------------------------------------------------------
 app.post('/api/run-pipeline', async (req, res) => {
   try {
@@ -860,14 +860,14 @@ app.post('/api/run-pipeline', async (req, res) => {
       INSERT INTO dbo.AgentActionLog (EventTime, AgentName, ActionType, Details, Status, ApprovedBy)
       VALUES (NOW(), 'Orchestrator', 'PIPELINE_TRIGGERED', 'Manual pipeline trigger via UI', 'COMPLETED', 'Human Operator')
     `);
-    res.json({ status: "success", message: "Pipeline triggered and logged to SQL Server." });
+    res.json({ status: "success", message: "Pipeline triggered and logged to Supabase Postgres." });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
 // ---------------------------------------------------------------------------
-// Groq Chat API Endpoint — queries SQL Server for all data answers
+// Groq Chat API Endpoint — queries Supabase Postgres for all data answers
 // ---------------------------------------------------------------------------
 let currentKeyIndex = 0;
 function getGroqInstance() {
@@ -888,7 +888,7 @@ async function queryDatabase(query) {
   
   try {
     const result = await executeSql(query);
-    console.log("✅ Data retrieved from SQL Server:", result.length, "rows found.");
+    console.log("✅ Data retrieved from Supabase Postgres:", result.length, "rows found.");
     return JSON.stringify(result.slice(0, 50));
   } catch (error) {
     console.error("❌ SQL Execution Error:", error.message);
@@ -929,7 +929,7 @@ app.post('/api/chat', async (req, res) => {
     }
 
     const systemPrompt = `You are the Cognitive Retail Command Center AI assistant for a retail demand forecasting system.
-Answer ALL data questions by querying the SQL Server database using the 'query_database' tool.
+Answer ALL data questions by querying the Supabase Postgres database using the 'query_database' tool.
 NEVER fabricate, hallucinate, or estimate data. Always query first.
 
 DATABASE SCHEMA (RetailAI PostgreSQL):
