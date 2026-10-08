@@ -181,7 +181,7 @@ app.get('/api/stock', async (req, res) => {
         FROM dbo.FactSales fs
         JOIN dbo.DimDate dd ON fs.DateKey = dd.DateKey
         JOIN dbo.DimStore ds ON fs.StoreKey = ds.StoreKey
-        WHERE dd.FullDate >= DATEADD(DAY, -7, CAST(TO_CHAR, (SELECT MAX(DateKey) FROM dbo.FactWarehouseInventory), 112) AS DATE))
+        WHERE dd.FullDate >= (TO_DATE((SELECT MAX(DateKey) FROM dbo.FactWarehouseInventory)::text, 'YYYYMMDD') - INTERVAL '7 days')
         GROUP BY fs.StoreKey, ds.WarehouseKey, fs.ProductKey
       ),
       RegionSafety AS (
@@ -328,24 +328,21 @@ app.get('/api/recommendations', async (req, res) => {
       JOIN dbo.DimProduct dp ON fa.ProductKey = dp.ProductKey
       JOIN dbo.DimStore ds ON fa.StoreKey = ds.StoreKey
       JOIN dbo.DimWarehouse dw ON fa.WarehouseKey = dw.WarehouseKey
-      OUTER APPLY (
-        SELECT TOP 1 OnHandQty 
-        FROM dbo.FactInventory i 
+      LEFT JOIN LATERAL (
+        SELECT OnHandQty FROM dbo.FactInventory i 
         WHERE i.StoreKey = fa.StoreKey AND i.ProductKey = fa.ProductKey
         ORDER BY DateKey DESC
-      ) invDest
-      OUTER APPLY (
-        SELECT TOP 1 OnHandQty 
-        FROM dbo.FactWarehouseInventory w 
+       LIMIT 1) invDest ON true
+      LEFT JOIN LATERAL (
+        SELECT OnHandQty FROM dbo.FactWarehouseInventory w 
         WHERE w.WarehouseKey = fa.WarehouseKey AND w.ProductKey = fa.ProductKey
         ORDER BY DateKey DESC
-      ) invSource
-      OUTER APPLY (
-        SELECT TOP 1 BaselineForecast, AdjustedForecast, Confidence 
-        FROM dbo.vw_ForecastVsActual f 
+       LIMIT 1) invSource ON true
+      LEFT JOIN LATERAL (
+        SELECT BaselineForecast, AdjustedForecast, Confidence FROM dbo.vw_ForecastVsActual f 
         WHERE f.SKU = dp.SKU AND f.StoreName = ds.StoreName
         ORDER BY f.FullDate DESC
-      ) fva
+       LIMIT 1) fva ON true
       WHERE ${statusFilter}
       ORDER BY fa.CreatedAt DESC
     `;
@@ -492,7 +489,7 @@ app.get('/api/rules', async (req, res) => {
           ApprovalType,
           COUNT(*) AS cnt
         FROM dbo.FactAllocation
-        WHERE CreatedAt >= DATEADD(DAY, -30, NOW())
+        WHERE CreatedAt >= (NOW() - INTERVAL '30 days')
         GROUP BY ApprovalType
       `)
     ]);
@@ -628,18 +625,16 @@ app.get('/api/history', async (req, res) => {
       JOIN dbo.DimProduct dp  ON dp.ProductKey  = fa.ProductKey
       JOIN dbo.DimStore   ds  ON ds.StoreKey    = fa.StoreKey
       LEFT JOIN dbo.DimWarehouse dw ON dw.WarehouseKey = fa.WarehouseKey
-      OUTER APPLY (
-        SELECT TOP 1 OnHandQty 
-        FROM dbo.FactInventory i 
+      LEFT JOIN LATERAL (
+        SELECT OnHandQty FROM dbo.FactInventory i 
         WHERE i.StoreKey = fa.StoreKey AND i.ProductKey = fa.ProductKey
         ORDER BY DateKey DESC
-      ) invDest
-      OUTER APPLY (
-        SELECT TOP 1 OnHandQty 
-        FROM dbo.FactWarehouseInventory w 
+       LIMIT 1) invDest ON true
+      LEFT JOIN LATERAL (
+        SELECT OnHandQty FROM dbo.FactWarehouseInventory w 
         WHERE w.WarehouseKey = fa.WarehouseKey AND w.ProductKey = fa.ProductKey
         ORDER BY DateKey DESC
-      ) invSource
+       LIMIT 1) invSource ON true
       WHERE fa.Status IN ('APPROVED','Executed','EXECUTED','Auto-Approved')
          OR (fa.Status IN ('REJECTED','Rejected') AND ISNULL(fa.ApprovalType, 'Auto') = 'Human')
       ORDER BY fa.DateKey DESC
