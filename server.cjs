@@ -429,10 +429,10 @@ app.get('/api/kpi', async (req, res) => {
       `),
       executeSql(`SELECT COUNT(*) as cnt FROM dbo.DimProduct`),
       executeSql(`
-        SELECT
-          COUNT(*) AS total,
-          SUM(CASE WHEN IsAnomaly = 1 THEN 1 ELSE 0 END) AS anomalies
-        FROM dbo.vw_AnomalyCandidates
+        SELECT 
+          SUM(CAST(ActualUnits AS FLOAT)) as total,
+          SUM(CASE WHEN ActualUnits > AdjustedForecast THEN CAST((ActualUnits - AdjustedForecast) AS FLOAT) ELSE 0 END) as anomalies
+        FROM dbo.vw_ForecastVsActual
       `),
       executeSql(`
         SELECT 
@@ -446,14 +446,12 @@ app.get('/api/kpi', async (req, res) => {
     ]);
 
     const accuracy = accuracyData.length > 0
-      ? parseFloat((parseFloat(accuracyData[0].Accuracy_Adjusted) * 100).toFixed(1))
+      ? parseFloat((parseFloat(accuracyData[0].Accuracy_Adjusted)).toFixed(1))
       : null;
     const skuCount = productCount.length > 0 ? productCount[0].cnt : 0;
-    const totalAnomalies = anomalyData.length > 0 ? anomalyData[0].total : 0;
+    const totalAnomalies = anomalyData.length > 0 && anomalyData[0].total > 0 ? anomalyData[0].total : 1;
     const anomalyCount = anomalyData.length > 0 ? anomalyData[0].anomalies : 0;
-    const stockoutRiskPct = totalAnomalies > 0
-      ? parseFloat(((anomalyCount / totalAnomalies) * 100).toFixed(1))
-      : 0;
+    const stockoutRiskPct = Math.round((anomalyCount / totalAnomalies) * 100);
       
     const totalInv = excessData.length > 0 ? excessData[0].Tot : 0;
     const excessInv = excessData.length > 0 ? excessData[0].Excess : 0;
@@ -558,7 +556,7 @@ app.get('/api/impact', async (req, res) => {
       ? Math.round((1 - parseFloat(accuracyData[0].WAPE_Baseline)) * 100)
       : 68; // fallback
     const adjustedAcc = accuracyData.length > 0
-      ? Math.round(parseFloat(accuracyData[0].Accuracy_Adjusted) * 100)
+      ? Math.round(parseFloat(accuracyData[0].Accuracy_Adjusted))
       : 94;
     
     data.push({
