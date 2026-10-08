@@ -1,6 +1,6 @@
 const express = require('express');
 const cors = require('cors');
-const { Connection, Request } = require('tedious');
+const { Pool } = require('pg');
 const nodemailer = require('nodemailer');
 require('dotenv').config();
 
@@ -205,7 +205,7 @@ app.get('/api/stock', async (req, res) => {
         FROM dbo.FactSales fs
         JOIN dbo.DimDate dd ON fs.DateKey = dd.DateKey
         JOIN dbo.DimStore ds ON fs.StoreKey = ds.StoreKey
-        WHERE dd.FullDate >= DATEADD(DAY, -7, CAST(CONVERT(VARCHAR, (SELECT MAX(DateKey) FROM dbo.FactWarehouseInventory), 112) AS DATE))
+        WHERE dd.FullDate >= DATEADD(DAY, -7, CAST(TO_CHAR, (SELECT MAX(DateKey) FROM dbo.FactWarehouseInventory), 112) AS DATE))
         GROUP BY fs.StoreKey, ds.WarehouseKey, fs.ProductKey
       ),
       RegionSafety AS (
@@ -516,7 +516,7 @@ app.get('/api/rules', async (req, res) => {
           ApprovalType,
           COUNT(*) AS cnt
         FROM dbo.FactAllocation
-        WHERE CreatedAt >= DATEADD(DAY, -30, GETDATE())
+        WHERE CreatedAt >= DATEADD(DAY, -30, NOW())
         GROUP BY ApprovalType
       `)
     ]);
@@ -748,7 +748,7 @@ app.post('/api/recommendations/:id/status', async (req, res) => {
       SET Status = '${newStatus}',
           ApprovedQty = CASE WHEN '${newStatus}' = 'APPROVED' THEN RecommendedQty ELSE 0 END,
           DecidedBy = 'Human Operator',
-          DecidedAt = GETDATE()
+          DecidedAt = NOW()
       WHERE AllocationKey = ${parseInt(allocationKey)}
     `;
     await executeSql(updateQ);
@@ -757,7 +757,7 @@ app.post('/api/recommendations/:id/status', async (req, res) => {
     const logQ = `
       INSERT INTO dbo.AgentActionLog (EventTime, AgentName, ActionType, StoreKey, ProductKey, Details, Status, ApprovedBy)
       SELECT
-        GETDATE(),
+        NOW(),
         'Human Operator',
         'Recommendation ${newStatus}',
         fa.StoreKey,
@@ -887,7 +887,7 @@ app.post('/api/run-pipeline', async (req, res) => {
   try {
     await executeSql(`
       INSERT INTO dbo.AgentActionLog (EventTime, AgentName, ActionType, Details, Status, ApprovedBy)
-      VALUES (GETDATE(), 'Orchestrator', 'PIPELINE_TRIGGERED', 'Manual pipeline trigger via UI', 'COMPLETED', 'Human Operator')
+      VALUES (NOW(), 'Orchestrator', 'PIPELINE_TRIGGERED', 'Manual pipeline trigger via UI', 'COMPLETED', 'Human Operator')
     `);
     res.json({ status: "success", message: "Pipeline triggered and logged to SQL Server." });
   } catch (error) {
@@ -961,7 +961,7 @@ app.post('/api/chat', async (req, res) => {
 Answer ALL data questions by querying the SQL Server database using the 'query_database' tool.
 NEVER fabricate, hallucinate, or estimate data. Always query first.
 
-DATABASE SCHEMA (RetailAI SQL Server):
+DATABASE SCHEMA (RetailAI PostgreSQL):
 TABLES:
 - dbo.DimProduct: ProductKey, SKU, ProductName, Category, Brand, Season, UnitCost, SellingPrice, IsNewProduct
 - dbo.DimStore: StoreKey, StoreCode, StoreName, City, State, Region, StoreType, StoreCapacityUnits, WarehouseKey, IsActive
@@ -986,10 +986,10 @@ VIEWS (pre-joined, use these for queries):
 
 CRITICAL INSTRUCTIONS:
 1. ALWAYS use 'query_database' tool before answering any data question. Never assume or fabricate data.
-2. Always write T-SQL. Always add TOP 50 to SELECT queries.
+2. Always write PostgreSQL. Always add LIMIT 50 to SELECT queries.
 3. FORMATTING RULES: Professional plain text only. No asterisks (**), no em dashes (---). Use plain hyphens (-).
 4. When asked about stocks/inventory: query FactWarehouseInventory or vw_WarehouseAvailable. NOT financial stocks.
-5. For date filters: DateKey is in YYYYMMDD integer format. Use CONVERT(INT, CONVERT(VARCHAR, date, 112)) or compare directly.
+5. For date filters: DateKey is in YYYYMMDD integer format. Use CONVERT(INT, TO_CHAR, date, 112)) or compare directly.
 6. For recent data: use MAX(DateKey) subquery to get latest snapshot.${weatherContext}`;
 
     const history = req.body.history || [];
@@ -1009,11 +1009,11 @@ CRITICAL INSTRUCTIONS:
         type: "function", 
         function: { 
           name: "query_database", 
-          description: "Executes a T-SQL SELECT query against the RetailAI SQL Server database. Use this for ALL data questions.", 
+          description: "Executes a PostgreSQL SELECT query against the RetailAI PostgreSQL database. Use this for ALL data questions.", 
           parameters: { 
             type: "object", 
             properties: { 
-              query: { type: "string", description: "Valid T-SQL SELECT query. Always include TOP 50." } 
+              query: { type: "string", description: "Valid PostgreSQL SELECT query. Always include LIMIT 50." } 
             }, 
             required: ["query"] 
           } 
