@@ -77,7 +77,23 @@ async function executeSql(query) {
     const tables = ['DimProduct', 'DimStore', 'DimWarehouse', 'FactWarehouseInventory', 'FactSales', 'FactForecast', 'FactAllocation', 'AgentActionLog', 'GuardrailConfig', 'RegionSafetyStock', 'FactForecastAccuracy'];
     for(const t of tables) { pgQuery = pgQuery.replace(new RegExp(`public\\.${t}`, 'gi'), `public."${t}"`); }
     const { rows } = await pool.query(pgQuery);
-    return rows;
+    
+    // Map lowercase Postgres return keys back to their exact original casing in the query!
+    const mappedRows = rows.map(row => {
+      const newRow = {};
+      for (const key of Object.keys(row)) {
+        const regex = new RegExp(`\\b${key}\\b`, 'i');
+        const match = query.match(regex);
+        if (match) {
+          newRow[match[0]] = row[key];
+        } else {
+          newRow[key] = row[key];
+        }
+      }
+      return newRow;
+    });
+    
+    return mappedRows;
   } catch (err) {
     console.error("❌ Query Failed:", err.message, "\nQuery:", query);
     throw err;
