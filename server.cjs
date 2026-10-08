@@ -1151,8 +1151,19 @@ CRITICAL INSTRUCTIONS:
   }
 });
 
-const PORT = 3001;
+const PORT = process.env.PORT || 3001;
+
+const path = require('path');
+// Serve static frontend
+app.use(express.static(path.join(__dirname, 'dist')));
+
+// Handle React routing, return all requests to React app
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+});
+
 app.listen(PORT, () => {
+
   console.log(`Backend server running on http://localhost:${PORT}`);
   console.log(`Database: ${process.env.DB_NAME} @ ${process.env.DB_SERVER}:${process.env.DB_PORT || 1433}`);
 });
