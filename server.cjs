@@ -747,7 +747,7 @@ app.post('/api/recommendations/:id/status', async (req, res) => {
       const detailsQ = `
         SELECT
           fa.RecommendedQty,
-          fa.ValidationNotes,
+          fa.Reason,
           dp.SKU,
           dp.ProductName,
           ds.StoreName  AS DestStoreName,
@@ -781,7 +781,7 @@ app.post('/api/recommendations/:id/status', async (req, res) => {
       const srcStr = details ? (details.SourceWarehouse || 'Central Warehouse') : "Unknown Source";
       const destStr = details ? details.DestStoreName : "Unknown Destination";
       const skuStr = details ? `${details.SKU} - ${details.ProductName}` : "Unknown Product";
-      const reasonStr = (details && details.ValidationNotes) ? details.ValidationNotes : "No specific reasoning provided.";
+      const reasonStr = (details && details.Reason) ? details.Reason : "No specific reasoning provided.";
       const statusColor = newStatus === 'APPROVED' ? '#4caf50' : '#f44336';
       
       const info = await transporter.sendMail({

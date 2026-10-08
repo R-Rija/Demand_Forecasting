@@ -889,21 +889,6 @@ function GuardrailsTab({ theme: T, rules }: { theme: any; rules: { automation?: 
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-start">
-        <button
-          onClick={() => setShowRules(!showRules)}
-          className="px-5 py-2.5 text-sm font-semibold border cursor-pointer rounded-xl transition-all flex items-center gap-2"
-          style={{
-            backgroundColor: showRules ? T.primaryStrong : T.surface,
-            color: showRules ? "#fff" : T.text,
-            borderColor: showRules ? T.primaryStrong : T.border,
-            boxShadow: T.shadow
-          }}
-        >
-          <ShieldCheck size={16} />
-          {showRules ? "Hide Agent Guardrails & Automation Rules" : "View Agent Guardrails & Automation Rules"}
-        </button>
-      </div>
 
       <Card theme={T}>
         <SectionHeader icon={Activity} title="Execution History" subtitle="Recent actions automatically approved or rejected by the Validation Agent" theme={T} />
@@ -1015,6 +1000,22 @@ function GuardrailsTab({ theme: T, rules }: { theme: any; rules: { automation?: 
         </div>
         {history.length === 0 && <EmptyState theme={T} title="No execution history" hint="History loads from the backend." />}
       </Card>
+
+      <div className="flex justify-start mt-4">
+        <button
+          onClick={() => setShowRules(!showRules)}
+          className="px-5 py-2.5 text-sm font-semibold border cursor-pointer rounded-xl transition-all flex items-center gap-2"
+          style={{
+            backgroundColor: showRules ? T.primaryStrong : T.surface,
+            color: showRules ? "#fff" : T.text,
+            borderColor: showRules ? T.primaryStrong : T.border,
+            boxShadow: T.shadow
+          }}
+        >
+          <ShieldCheck size={16} />
+          {showRules ? "Hide Agent Guardrails & Automation Rules" : "View Agent Guardrails & Automation Rules"}
+        </button>
+      </div>
 
       {showRules && (
         <>
