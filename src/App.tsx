@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   Activity,
@@ -164,6 +164,13 @@ interface Recommendation {
   transportCostInr: string;
   confidencePct: number;
   status: RecStatus;
+  warehouse?: string;
+  store?: string;
+  sourceStock?: number;
+  destStock?: number;
+  reason?: string;
+  validationNotes?: string;
+  product?: string;
 }
 
 interface ExecMetric {
@@ -598,6 +605,7 @@ function RecommendationsTab({
   const [filter, setFilter] = useState<"pending" | "approved" | "rejected">("pending");
   const [data, setData] = useState<Recommendation[]>([]);
   const [loading, setLoading] = useState(false);
+  const [selectedRec, setSelectedRec] = useState<Recommendation | null>(null);
 
   const fetchByStatus = async (status: string) => {
     setLoading(true);
@@ -612,26 +620,31 @@ function RecommendationsTab({
     }
   };
 
-  useEffect(() => { fetchByStatus(filter); }, [filter]);
+  useEffect(() => { 
+    setSelectedRec(null);
+    fetchByStatus(filter); 
+  }, [filter]);
 
   return (
     <div className="space-y-5">
-      <div className="flex gap-2 pb-2">
-        {(["pending", "approved", "rejected"] as const).map((f) => (
-          <button
-            key={f}
-            onClick={() => setFilter(f)}
-            className="px-4 py-1.5 rounded-full text-sm font-semibold capitalize border cursor-pointer transition-colors"
-            style={{
-              backgroundColor: filter === f ? T.primaryStrong : "transparent",
-              color: filter === f ? "#fff" : T.sub,
-              borderColor: filter === f ? T.primaryStrong : T.border,
-            }}
-          >
-            {f}
-          </button>
-        ))}
-      </div>
+      {!selectedRec && (
+        <div className="flex gap-2 pb-2">
+          {(["pending", "approved", "rejected"] as const).map((f) => (
+            <button
+              key={f}
+              onClick={() => setFilter(f)}
+              className="px-4 py-1.5 rounded-full text-sm font-semibold capitalize border cursor-pointer transition-colors"
+              style={{
+                backgroundColor: filter === f ? T.primaryStrong : "transparent",
+                color: filter === f ? "#fff" : T.sub,
+                borderColor: filter === f ? T.primaryStrong : T.border,
+              }}
+            >
+              {f}
+            </button>
+          ))}
+        </div>
+      )}
 
       {loading && (
         <div className="flex items-center gap-2 py-8 justify-center" style={{ color: T.sub }}>
@@ -639,12 +652,54 @@ function RecommendationsTab({
         </div>
       )}
 
-      {!loading && data.length === 0 && (
+      {!loading && !selectedRec && data.length === 0 && (
         <Card theme={T}>
           <EmptyState theme={T} title={`No ${filter} recommendations`} hint={`There are currently no items in the ${filter} queue.`} />
         </Card>
       )}
-      {!loading && data.map((rec) => {
+
+      {!loading && !selectedRec && data.length > 0 && (
+        <Card theme={T}>
+          <div className="overflow-x-auto crcc-scroll">
+            <table className="w-full text-sm min-w-[700px]">
+              <thead>
+                <tr style={{ backgroundColor: T.surfaceAlt, color: T.sub }}>
+                  <th className="text-left font-medium px-6 py-3">ID / SKU</th>
+                  <th className="text-left font-medium px-6 py-3">Product</th>
+                  <th className="text-left font-medium px-6 py-3">Action</th>
+                  <th className="text-left font-medium px-6 py-3">Confidence</th>
+                  <th className="text-center font-medium px-6 py-3">Details</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.map((rec) => (
+                  <tr key={rec.id} className="border-b transition-colors hover:bg-black/5 dark:hover:bg-white/5" style={{ borderColor: T.border, color: T.text }}>
+                    <td className="px-6 py-4">
+                      <div className="font-semibold">{rec.id.replace('alloc-', '#')}</div>
+                      <div className="text-xs mt-1" style={{ color: T.sub }}>{rec.sku}</div>
+                    </td>
+                    <td className="px-6 py-4">{rec.product}</td>
+                    <td className="px-6 py-4">{rec.action}</td>
+                    <td className="px-6 py-4 text-emerald-500 font-bold">{rec.confidencePct}%</td>
+                    <td className="px-6 py-4 text-center">
+                      <button
+                        onClick={() => setSelectedRec(rec)}
+                        className="px-4 py-1.5 rounded-md text-xs font-semibold cursor-pointer border"
+                        style={{ backgroundColor: T.surface, color: T.text, borderColor: T.border }}
+                      >
+                        View
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+
+      {!loading && selectedRec && (() => {
+        const rec = selectedRec;
         const status = rec.status || "pending";
         const stats = [
           { label: "Expected demand", value: rec.expectedDemand, color: T.text },
@@ -653,143 +708,161 @@ function RecommendationsTab({
           { label: "Confidence", value: `${rec.confidencePct}%`, color: T.ok },
         ];
         return (
-          <Card key={rec.id} theme={T} accent={status === "approved" ? T.ok : status === "rejected" ? T.high : T.low}>
-            <div className="p-6">
-              <div className="flex items-start justify-between gap-4 mb-5">
-                <div className="flex items-start gap-3.5 min-w-0">
-                  <div className="h-11 w-11 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: T.highSoft, color: T.high }}>
-                    <AlertTriangle size={19} />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-[15px] font-semibold flex items-center gap-2" style={{ color: T.text }}>
-                      Demand anomaly detected
-                      {status === "pending" && (
-                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-100 text-red-700 uppercase tracking-wider">
-                          Level 3 Escalation
-                        </span>
-                      )}
+          <div className="space-y-4">
+            <button
+              onClick={() => setSelectedRec(null)}
+              className="flex items-center gap-2 text-sm font-semibold cursor-pointer mb-2"
+              style={{ color: T.sub }}
+            >
+              ← Back to {filter} list
+            </button>
+            <Card theme={T} accent={status === "approved" ? T.ok : status === "rejected" ? T.high : T.low}>
+              <div className="p-6">
+                <div className="flex items-start justify-between gap-4 mb-5">
+                  <div className="flex items-start gap-3.5 min-w-0">
+                    <div className="h-11 w-11 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: T.highSoft, color: T.high }}>
+                      <AlertTriangle size={19} />
                     </div>
-                    <div className="text-sm mt-0.5" style={{ color: T.sub }}>{rec.sku} in {rec.region}</div>
+                    <div className="min-w-0">
+                      <div className="text-[15px] font-semibold flex items-center gap-2" style={{ color: T.text }}>
+                        Demand anomaly detected
+                        {status === "pending" && (
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-100 text-red-700 uppercase tracking-wider">
+                            Level 3 Escalation
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-sm mt-0.5" style={{ color: T.sub }}>{rec.sku} - {rec.product} in {rec.region}</div>
+                    </div>
                   </div>
+                  {status === "pending" && <Pill label="Awaiting decision" color={T.low} bg={T.lowSoft} />}
+                  {status === "approved" && <Pill label="Approved" color={T.ok} bg={T.okSoft} />}
+                  {status === "rejected" && <Pill label="Rejected" color={T.high} bg={T.highSoft} />}
                 </div>
-                {status === "pending" && <Pill label="Awaiting decision" color={T.low} bg={T.lowSoft} />}
-                {status === "approved" && <Pill label="Approved" color={T.ok} bg={T.okSoft} />}
-                {status === "rejected" && <Pill label="Rejected" color={T.high} bg={T.highSoft} />}
-              </div>
 
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
-                {stats.map((s) => (
-                  <div key={s.label} className="rounded-xl px-4 py-3 border" style={{ borderColor: T.border, backgroundColor: T.surfaceAlt }}>
-                    <div className="text-xs" style={{ color: T.sub }}>{s.label}</div>
-                    <div className="crcc-serif text-2xl font-semibold mt-1" style={{ color: s.color }}>{s.value}</div>
-                  </div>
-                ))}
-              </div>
-
-              <div className="mb-5">
-                <div className="text-xs font-medium mb-2" style={{ color: T.sub }}>Drivers</div>
-                <div className="flex flex-wrap gap-2">
-                  {rec.drivers.map((d, i) => (
-                    <span key={i} className="text-xs font-medium px-2.5 py-1 rounded-full" style={{ backgroundColor: T.violetSoft, color: T.violet }}>
-                      {d}
-                    </span>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+                  {stats.map((s) => (
+                    <div key={s.label} className="rounded-xl px-4 py-3 border" style={{ borderColor: T.border, backgroundColor: T.surfaceAlt }}>
+                      <div className="text-xs" style={{ color: T.sub }}>{s.label}</div>
+                      <div className="crcc-serif text-2xl font-semibold mt-1" style={{ color: s.color }}>{s.value}</div>
+                    </div>
                   ))}
                 </div>
-              </div>
 
-              <div className="flex flex-col md:flex-row gap-4 mb-5 relative">
-                <div className="flex-1 rounded-xl px-5 py-4" style={{ backgroundColor: T.surfaceAlt, border: `1px solid ${T.border}` }}>
-                   <div className="text-xs font-semibold mb-3 uppercase tracking-wider" style={{ color: T.sub }}>Source</div>
-                   <div className="text-sm font-medium mb-3 truncate" style={{ color: T.text }} title={rec.warehouse}>{rec.warehouse}</div>
-                   <div className="flex justify-between items-center">
-                     <div>
-                       <div className="text-[11px]" style={{ color: T.sub }}>Current Stock</div>
-                       <div className="text-lg font-bold" style={{ color: T.text }}>{rec.sourceStock} <span className="text-xs font-normal" style={{color: T.sub}}>units</span></div>
-                     </div>
-                   </div>
-                </div>
-                
-                <div className="hidden md:flex items-center justify-center absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10">
-                   <div className="h-8 w-8 rounded-full flex items-center justify-center shadow-sm" style={{ backgroundColor: '#fff', border: `1px solid ${T.border}`, color: T.sub }}>
-                     <ArrowRight size={14} />
-                   </div>
-                </div>
-
-                <div className="flex-1 rounded-xl px-5 py-4" style={{ backgroundColor: T.surfaceAlt, border: `1px solid ${T.border}` }}>
-                   <div className="text-xs font-semibold mb-3 uppercase tracking-wider" style={{ color: T.sub }}>Destination</div>
-                   <div className="text-sm font-medium mb-3 truncate" style={{ color: T.text }} title={rec.store}>{rec.store}</div>
-                   <div className="flex justify-between items-center">
-                     <div>
-                       <div className="text-[11px]" style={{ color: T.sub }}>Current Stock</div>
-                       <div className="text-lg font-bold" style={{ color: T.high }}>{rec.destStock} <span className="text-xs font-normal" style={{color: T.sub}}>units</span></div>
-                     </div>
-                     <div className="text-right border-l pl-4" style={{ borderColor: T.border }}>
-                       <div className="text-[11px]" style={{ color: T.sub }}>Expected Demand</div>
-                       <div className="text-lg font-bold" style={{ color: T.primaryText }}>{rec.expectedDemand} <span className="text-xs font-normal" style={{color: T.sub}}>units</span></div>
-                     </div>
-                   </div>
-                </div>
-              </div>
-
-              <div className="rounded-xl px-5 py-4 mb-5" style={{ backgroundColor: T.primarySoft, border: `1px solid ${T.border}` }}>
-                <div className="text-xs font-medium mb-1" style={{ color: T.sub }}>Recommended action</div>
-                <div className="text-sm font-medium" style={{ color: T.text }}>{rec.action}</div>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4 pt-4 border-t" style={{ borderColor: T.border }}>
-                  <div>
-                    <div className="text-xs" style={{ color: T.sub }}>Stockout reduction</div>
-                    <div className="text-sm font-bold mt-0.5" style={{ color: T.ok }}>{rec.stockoutReductionPct}%</div>
-                  </div>
-                  <div>
-                    <div className="text-xs" style={{ color: T.sub }}>Incremental sales</div>
-                    <div className="text-sm font-bold mt-0.5" style={{ color: T.ok }}>{rec.incrementalSalesInr}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs" style={{ color: T.sub }}>Transport cost</div>
-                    <div className="text-sm font-bold mt-0.5" style={{ color: T.text }}>{rec.transportCostInr}</div>
+                <div className="mb-5">
+                  <div className="text-xs font-medium mb-2" style={{ color: T.sub }}>Drivers</div>
+                  <div className="flex flex-wrap gap-2">
+                    {rec.drivers.map((d, i) => (
+                      <span key={i} className="text-xs font-medium px-2.5 py-1 rounded-full" style={{ backgroundColor: T.violetSoft, color: T.violet }}>
+                        {d}
+                      </span>
+                    ))}
                   </div>
                 </div>
-              </div>
 
-              {status === "pending" && (
-                <div className="flex gap-3">
-                  <button
-                    onClick={async () => {
-                      try {
-                        await fetch(`${API}/recommendations/${rec.id}/status`, {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ status: 'approved' })
-                        });
-                        fetchByStatus(filter);
-                      } catch(e) { console.error(e) }
-                    }}
-                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold border-none cursor-pointer"
-                    style={{ backgroundColor: T.primaryStrong, color: "#fff" }}
-                  >
-                    <Check size={16} /> Approve
-                  </button>
-                  <button
-                    onClick={async () => {
-                      try {
-                        await fetch(`${API}/recommendations/${rec.id}/status`, {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ status: 'rejected' })
-                        });
-                        fetchByStatus(filter);
-                      } catch(e) { console.error(e) }
-                    }}
-                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold cursor-pointer"
-                    style={{ backgroundColor: "transparent", color: T.high, border: `1px solid ${T.high}` }}
-                  >
-                    <Ban size={16} /> Reject
-                  </button>
+                <div className="flex flex-col md:flex-row gap-4 mb-5 relative">
+                  <div className="flex-1 rounded-xl px-5 py-4" style={{ backgroundColor: T.surfaceAlt, border: `1px solid ${T.border}` }}>
+                     <div className="text-xs font-semibold mb-3 uppercase tracking-wider" style={{ color: T.sub }}>Source</div>
+                     <div className="text-sm font-medium mb-3 truncate" style={{ color: T.text }} title={rec.warehouse}>{rec.warehouse}</div>
+                     <div className="flex justify-between items-center">
+                       <div>
+                         <div className="text-[11px]" style={{ color: T.sub }}>Current Stock</div>
+                         <div className="text-lg font-bold" style={{ color: T.text }}>{rec.sourceStock} <span className="text-xs font-normal" style={{color: T.sub}}>units</span></div>
+                       </div>
+                     </div>
+                  </div>
+                  
+                  <div className="hidden md:flex items-center justify-center absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10">
+                     <div className="h-8 w-8 rounded-full flex items-center justify-center shadow-sm" style={{ backgroundColor: '#fff', border: `1px solid ${T.border}`, color: T.sub }}>
+                       <ArrowRight size={14} />
+                     </div>
+                  </div>
+
+                  <div className="flex-1 rounded-xl px-5 py-4" style={{ backgroundColor: T.surfaceAlt, border: `1px solid ${T.border}` }}>
+                     <div className="text-xs font-semibold mb-3 uppercase tracking-wider" style={{ color: T.sub }}>Destination</div>
+                     <div className="text-sm font-medium mb-3 truncate" style={{ color: T.text }} title={rec.store}>{rec.store}</div>
+                     <div className="flex justify-between items-center">
+                       <div>
+                         <div className="text-[11px]" style={{ color: T.sub }}>Current Stock</div>
+                         <div className="text-lg font-bold" style={{ color: T.high }}>{rec.destStock} <span className="text-xs font-normal" style={{color: T.sub}}>units</span></div>
+                       </div>
+                       <div className="text-right border-l pl-4" style={{ borderColor: T.border }}>
+                         <div className="text-[11px]" style={{ color: T.sub }}>Expected Demand</div>
+                         <div className="text-lg font-bold" style={{ color: T.primaryText }}>{rec.expectedDemand} <span className="text-xs font-normal" style={{color: T.sub}}>units</span></div>
+                       </div>
+                     </div>
+                  </div>
                 </div>
-              )}
-            </div>
-          </Card>
+
+                <div className="rounded-xl px-5 py-4 mb-5" style={{ backgroundColor: T.primarySoft, border: `1px solid ${T.border}` }}>
+                  <div className="text-xs font-medium mb-1" style={{ color: T.sub }}>Recommended action</div>
+                  <div className="text-sm font-medium" style={{ color: T.text }}>{rec.action}</div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4 pt-4 border-t" style={{ borderColor: T.border }}>
+                    <div>
+                      <div className="text-xs" style={{ color: T.sub }}>Stockout reduction</div>
+                      <div className="text-sm font-bold mt-0.5" style={{ color: T.ok }}>{rec.stockoutReductionPct}%</div>
+                    </div>
+                    <div>
+                      <div className="text-xs" style={{ color: T.sub }}>Incremental sales</div>
+                      <div className="text-sm font-bold mt-0.5" style={{ color: T.ok }}>{rec.incrementalSalesInr}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs" style={{ color: T.sub }}>Transport cost</div>
+                      <div className="text-sm font-bold mt-0.5" style={{ color: T.text }}>{rec.transportCostInr}</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-xl px-5 py-4 mb-5" style={{ backgroundColor: T.surfaceAlt, border: `1px solid ${T.border}` }}>
+                  <div className="text-xs font-semibold mb-2 uppercase tracking-wider" style={{ color: T.sub }}>AI Reasoning & Validation</div>
+                  <p className="text-sm" style={{ color: T.text, lineHeight: '1.5' }}>
+                    {rec.validationNotes || rec.reason || "No specific reasoning provided."}
+                  </p>
+                </div>
+
+                {status === "pending" && (
+                  <div className="flex gap-3">
+                    <button
+                      onClick={async () => {
+                        try {
+                          await fetch(`${API}/recommendations/${rec.id}/status`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ status: 'approved' })
+                          });
+                          setSelectedRec(null);
+                          fetchByStatus(filter);
+                        } catch(e) { console.error(e) }
+                      }}
+                      className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold border-none cursor-pointer"
+                      style={{ backgroundColor: T.primaryStrong, color: "#fff" }}
+                    >
+                      <Check size={16} /> Approve
+                    </button>
+                    <button
+                      onClick={async () => {
+                        try {
+                          await fetch(`${API}/recommendations/${rec.id}/status`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ status: 'rejected' })
+                          });
+                          setSelectedRec(null);
+                          fetchByStatus(filter);
+                        } catch(e) { console.error(e) }
+                      }}
+                      className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold cursor-pointer"
+                      style={{ backgroundColor: "transparent", color: T.high, border: `1px solid ${T.high}` }}
+                    >
+                      <Ban size={16} /> Reject
+                    </button>
+                  </div>
+                )}
+              </div>
+            </Card>
+          </div>
         );
-      })}
+      })()}
     </div>
   );
 }
@@ -847,16 +920,17 @@ function GuardrailsTab({ theme: T, rules }: { theme: any; rules: { automation?: 
               </tr>
             </thead>
             <tbody>
-              {history.map((h, i) => {
-                const isApproved = h.status.includes('approved') || h.status.includes('executed');
-                const isRejected = h.status.includes('rejected');
-                return (
-                  <tr 
-                    key={i} 
-                    style={{ borderTop: `1px solid ${T.border}`, cursor: 'pointer' }}
-                    onClick={() => setSelectedRow(h)}
-                    className="hover:opacity-80 transition-opacity"
-                  >
+                {history.map((h, i) => {
+                  const isApproved = h.status.includes('approved') || h.status.includes('executed');
+                  const isRejected = h.status.includes('rejected');
+                  const isSelected = selectedRow?.id === h.id;
+                  return (
+                    <React.Fragment key={i}>
+                      <tr 
+                        style={{ borderTop: `1px solid ${T.border}`, cursor: 'pointer', backgroundColor: isSelected ? T.surfaceAlt : 'transparent' }}
+                        onClick={() => setSelectedRow(isSelected ? null : h)}
+                        className="hover:opacity-80 transition-opacity"
+                      >
                     <td className="px-6 py-4">
                       <div className="font-medium" style={{ color: T.text }}>{h.sku}</div>
                       <div className="text-xs mt-1" style={{ color: T.sub }}>ID: {h.id}</div>
@@ -879,6 +953,61 @@ function GuardrailsTab({ theme: T, rules }: { theme: any; rules: { automation?: 
                       {h.reason}
                     </td>
                   </tr>
+                  {isSelected && (
+                    <tr>
+                      <td colSpan={6} className="p-0 border-0">
+                        <div className="p-6 m-4 mt-0 rounded-2xl shadow-sm border" style={{ backgroundColor: T.surface, borderColor: T.border }}>
+                          <div className="flex justify-between items-center mb-4">
+                            <h3 className="text-lg font-bold" style={{ color: T.text }}>Decision Reasoning for {h.sku}</h3>
+                            <button onClick={(e) => { e.stopPropagation(); setSelectedRow(null); }} className="bg-transparent border-none cursor-pointer hover:opacity-70 transition-opacity" style={{ color: T.sub }}>
+                              <X size={20} />
+                            </button>
+                          </div>
+                          <div className="space-y-4">
+                            <div className="grid grid-cols-3 gap-3">
+                              <div className="p-3 rounded-xl" style={{ backgroundColor: T.surfaceAlt }}>
+                                <div className="text-xs mb-1" style={{ color: T.sub }}>Qty Transferred</div>
+                                <div className="text-lg font-bold" style={{ color: T.primaryStrong }}>{h.qty}</div>
+                              </div>
+                              <div className="p-3 rounded-xl" style={{ backgroundColor: T.surfaceAlt }}>
+                                <div className="text-xs mb-1" style={{ color: T.sub }}>Est. Value</div>
+                                <div className="text-sm font-bold" style={{ color: T.text }}>₹{Number(h.estimatedValue || 0).toLocaleString('en-IN')}</div>
+                              </div>
+                              <div className="p-3 rounded-xl" style={{ backgroundColor: T.surfaceAlt }}>
+                                <div className="text-xs mb-1" style={{ color: T.sub }}>Decision Type</div>
+                                <div className="text-sm font-bold" style={{ color: T.text }}>{h.approvalType || 'Auto'}</div>
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3 mt-2">
+                              <div className="p-3 rounded-xl" style={{ backgroundColor: T.surfaceAlt }}>
+                                <div className="text-xs mb-1" style={{ color: T.sub }}>From (Source)</div>
+                                <div className="text-sm font-medium mb-2" style={{ color: T.text }}>{h.fromWarehouse || 'N/A'}</div>
+                                <div className="text-xs flex justify-between items-center pt-2 border-t" style={{ color: T.text, borderColor: T.border }}>
+                                  <span style={{ color: T.sub }}>Available Stock</span>
+                                  <span className="font-bold">{h.sourceStock || 0} units</span>
+                                </div>
+                              </div>
+                              <div className="p-3 rounded-xl" style={{ backgroundColor: T.surfaceAlt }}>
+                                <div className="text-xs mb-1" style={{ color: T.sub }}>To (Destination)</div>
+                                <div className="text-sm font-medium mb-2" style={{ color: T.text }}>{h.toStore || 'N/A'}</div>
+                                <div className="text-xs flex justify-between items-center pt-2 border-t" style={{ color: T.text, borderColor: T.border }}>
+                                  <span style={{ color: T.sub }}>Current Stock</span>
+                                  <span className="font-bold">{h.destStock || 0} units</span>
+                                </div>
+                              </div>
+                            </div>
+                            <div>
+                              <div className="text-xs mb-1" style={{ color: T.sub }}>Detailed Reasoning</div>
+                              <div className="text-sm p-4 rounded-xl leading-relaxed mt-2" style={{ backgroundColor: T.surfaceAlt, color: T.text, border: `1px solid ${T.border}` }}>
+                                {h.reason || "Processed by Validation Agent"}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  </React.Fragment>
                 );
               })}
             </tbody>
@@ -886,64 +1015,6 @@ function GuardrailsTab({ theme: T, rules }: { theme: any; rules: { automation?: 
         </div>
         {history.length === 0 && <EmptyState theme={T} title="No execution history" hint="History loads from the backend." />}
       </Card>
-
-      {selectedRow && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0" style={{ backgroundColor: "rgba(20, 15, 50, 0.5)" }} onClick={() => setSelectedRow(null)} />
-          <div className="relative w-full max-w-lg rounded-2xl p-6 shadow-xl" style={{ backgroundColor: T.surface, borderColor: T.border, border: `1px solid ${T.border}` }}>
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-bold" style={{ color: T.text }}>Decision Reasoning</h3>
-              <button onClick={() => setSelectedRow(null)} className="bg-transparent border-none cursor-pointer hover:opacity-70 transition-opacity" style={{ color: T.sub }}>
-                <X size={20} />
-              </button>
-            </div>
-            <div className="space-y-4">
-              <div>
-                <div className="text-xs mb-1" style={{ color: T.sub }}>SKU / Product</div>
-                <div className="text-sm font-medium" style={{ color: T.text }}>{selectedRow.sku} — {selectedRow.productName}</div>
-              </div>
-              <div className="grid grid-cols-3 gap-3">
-                <div className="p-3 rounded-xl" style={{ backgroundColor: T.surfaceAlt }}>
-                  <div className="text-xs mb-1" style={{ color: T.sub }}>Qty Transferred</div>
-                  <div className="text-lg font-bold" style={{ color: T.primaryStrong }}>{selectedRow.qty}</div>
-                </div>
-                <div className="p-3 rounded-xl" style={{ backgroundColor: T.surfaceAlt }}>
-                  <div className="text-xs mb-1" style={{ color: T.sub }}>Est. Value</div>
-                  <div className="text-sm font-bold" style={{ color: T.text }}>₹{Number(selectedRow.estimatedValue || 0).toLocaleString('en-IN')}</div>
-                </div>
-                <div className="p-3 rounded-xl" style={{ backgroundColor: T.surfaceAlt }}>
-                  <div className="text-xs mb-1" style={{ color: T.sub }}>Decision Type</div>
-                  <div className="text-sm font-bold" style={{ color: T.text }}>{selectedRow.approvalType || 'Auto'}</div>
-                </div>
-              </div>
-              <div>
-                <div className="text-xs mb-1" style={{ color: T.sub }}>From</div>
-                <div className="text-sm font-medium" style={{ color: T.text }}>{selectedRow.fromWarehouse || 'N/A'}</div>
-              </div>
-              <div>
-                <div className="text-xs mb-1" style={{ color: T.sub }}>To</div>
-                <div className="text-sm font-medium" style={{ color: T.text }}>{selectedRow.toStore || 'N/A'}</div>
-              </div>
-              <div>
-                <div className="text-xs mb-1" style={{ color: T.sub }}>Status</div>
-                <div className="inline-block">
-                  <Pill 
-                    label={selectedRow.status.toUpperCase()} 
-                    color={selectedRow.status.includes('approved') || selectedRow.status.includes('executed') ? T.ok : T.high} 
-                    bg={selectedRow.status.includes('approved') || selectedRow.status.includes('executed') ? T.okSoft : T.highSoft} 
-                  />
-                </div>
-              </div>
-              <div>
-                <div className="text-xs mb-1" style={{ color: T.sub }}>Detailed Reasoning</div>
-                <div className="text-sm p-4 rounded-xl leading-relaxed mt-2" style={{ backgroundColor: T.surfaceAlt, color: T.text, border: `1px solid ${T.border}` }}>
-                  {selectedRow.reason || "Processed by Validation Agent"}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {showRules && (
         <>
@@ -1068,7 +1139,7 @@ interface ChatMessage {
   text: string;
 }
 
-function GlobalChatbot({ onTriggerPipeline, theme: T, contextData }: { onTriggerPipeline: () => void; theme: any; contextData?: any }) {
+function GlobalChatbot({ onTriggerPipeline, theme: T }: { onTriggerPipeline: () => void; theme: any }) {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -1205,7 +1276,7 @@ function GlobalChatbot({ onTriggerPipeline, theme: T, contextData }: { onTrigger
 export default function ComprehensiveRetailCommandCenter() {
   const [tab, setTab] = useState<TabId>("overview");
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [running, setRunning] = useState(false);
+
   const [isDark, setIsDark] = useState(false);
   const T = isDark ? T_DARK : T_LIGHT;
 
@@ -1240,7 +1311,7 @@ export default function ComprehensiveRetailCommandCenter() {
     fetchData();
   }, []);
 
-  const [statuses, setStatuses] = useState<Record<string, AgentStatus>>({
+  const [statuses] = useState<Record<string, AgentStatus>>({
     forecast: "idle",
     allocation: "idle",
     validation: "idle",
@@ -1359,7 +1430,7 @@ export default function ComprehensiveRetailCommandCenter() {
       </main>
 
       <PipelineDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} statuses={statuses} theme={T} />
-      <GlobalChatbot onTriggerPipeline={runPipeline} theme={T} contextData={{ demandRows, stockRows, recommendations: [] }} />
+      <GlobalChatbot onTriggerPipeline={runPipeline} theme={T} />
     </div>
   );
 }

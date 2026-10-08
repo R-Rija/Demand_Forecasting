@@ -317,9 +317,9 @@ app.get('/api/recommendations', async (req, res) => {
     if (statusParam === 'approved') {
       statusFilter = `fa.Status IN ('APPROVED', 'Approved', 'Executed', 'EXECUTED')`;
     } else if (statusParam === 'rejected') {
-      statusFilter = `fa.Status IN ('REJECTED', 'Rejected')`;
+      statusFilter = `fa.Status IN ('REJECTED', 'Rejected') AND ISNULL(fa.ApprovalType, 'Auto') = 'Human'`;
     } else {
-      statusFilter = `fa.Status IN ('PENDING_APPROVAL', 'Pending')`;
+      statusFilter = `fa.Status IN ('PENDING_APPROVAL', 'Pending', 'Auto-Rejected') OR (fa.Status IN ('REJECTED', 'Rejected') AND ISNULL(fa.ApprovalType, 'Auto') = 'Auto')`;
     }
 
     const q = `
@@ -329,10 +329,10 @@ app.get('/api/recommendations', async (req, res) => {
         fa.ApprovalType,
         fa.Reason,
         fa.Status,
-        fa.ExpectedDemand,
-        fa.NewForecast,
+        CASE WHEN ISNULL(fa.ExpectedDemand, 0) = 0 THEN ISNULL(fva.BaselineForecast, 0) ELSE fa.ExpectedDemand END AS ExpectedDemand,
+        CASE WHEN ISNULL(fa.NewForecast, 0) = 0 THEN ISNULL(fva.AdjustedForecast, 0) ELSE fa.NewForecast END AS NewForecast,
         fa.Drivers,
-        fa.Confidence,
+        CASE WHEN ISNULL(fa.Confidence, 0) = 0 THEN ISNULL(fva.Confidence, 0) ELSE fa.Confidence END AS Confidence,
         fa.EstimatedValue,
         fa.ValidationNotes,
         fa.CreatedAt,
@@ -364,6 +364,12 @@ app.get('/api/recommendations', async (req, res) => {
         WHERE w.WarehouseKey = fa.WarehouseKey AND w.ProductKey = fa.ProductKey
         ORDER BY DateKey DESC
       ) invSource
+      OUTER APPLY (
+        SELECT TOP 1 BaselineForecast, AdjustedForecast, Confidence 
+        FROM dbo.vw_ForecastVsActual f 
+        WHERE f.SKU = dp.SKU AND f.StoreName = ds.StoreName
+        ORDER BY f.FullDate DESC
+      ) fva
       WHERE ${statusFilter}
       ORDER BY fa.CreatedAt DESC
     `;
@@ -393,8 +399,15 @@ app.get('/api/recommendations', async (req, res) => {
 
       let statusMapped = 'pending';
       const rawStatus = (row.Status || '').toLowerCase();
-      if (rawStatus === 'approved' || rawStatus === 'executed') statusMapped = 'approved';
-      else if (rawStatus === 'rejected') statusMapped = 'rejected';
+      const rawApprovalType = (row.ApprovalType || 'Auto').toLowerCase();
+      if (rawStatus === 'approved' || rawStatus === 'executed') {
+        statusMapped = 'approved';
+      } else if (rawStatus === 'rejected') {
+         if (rawApprovalType === 'human') statusMapped = 'rejected';
+         else statusMapped = 'pending'; 
+      } else if (rawStatus === 'auto-rejected') {
+         statusMapped = 'pending';
+      }
 
       return {
         id: `alloc-${row.AllocationKey}`,
@@ -632,12 +645,27 @@ app.get('/api/history', async (req, res) => {
         dp.ProductName,
         ds.StoreName  AS DestStoreName,
         ds.City       AS DestCity,
-        dw.WarehouseName AS SourceWarehouse
+        dw.WarehouseName AS SourceWarehouse,
+        ISNULL(invDest.OnHandQty, 0) AS DestStock,
+        ISNULL(invSource.OnHandQty, 0) AS SourceStock
       FROM dbo.FactAllocation fa
       JOIN dbo.DimProduct dp  ON dp.ProductKey  = fa.ProductKey
       JOIN dbo.DimStore   ds  ON ds.StoreKey    = fa.StoreKey
       LEFT JOIN dbo.DimWarehouse dw ON dw.WarehouseKey = fa.WarehouseKey
-      WHERE fa.Status IN ('APPROVED','REJECTED','Executed','EXECUTED','Auto-Approved','Auto-Rejected')
+      OUTER APPLY (
+        SELECT TOP 1 OnHandQty 
+        FROM dbo.FactInventory i 
+        WHERE i.StoreKey = fa.StoreKey AND i.ProductKey = fa.ProductKey
+        ORDER BY DateKey DESC
+      ) invDest
+      OUTER APPLY (
+        SELECT TOP 1 OnHandQty 
+        FROM dbo.FactWarehouseInventory w 
+        WHERE w.WarehouseKey = fa.WarehouseKey AND w.ProductKey = fa.ProductKey
+        ORDER BY DateKey DESC
+      ) invSource
+      WHERE fa.Status IN ('APPROVED','Executed','EXECUTED','Auto-Approved')
+         OR (fa.Status IN ('REJECTED','Rejected') AND ISNULL(fa.ApprovalType, 'Auto') = 'Human')
       ORDER BY fa.DateKey DESC
     `;
     const dbData = await executeSql(q);
@@ -685,7 +713,9 @@ app.get('/api/history', async (req, res) => {
         decidedBy: row.DecidedBy || 'System',
         decidedAt: row.DecidedAt,
         estimatedValue: row.EstimatedValue || 0,
-        reason: reason
+        reason: reason,
+        sourceStock: row.SourceStock || 0,
+        destStock: row.DestStock || 0
       };
     });
     res.json(data);
@@ -740,6 +770,31 @@ app.post('/api/recommendations/:id/status', async (req, res) => {
     `;
     await executeSql(logQ);
 
+    // Fetch allocation details for the email
+    let details = null;
+    try {
+      const detailsQ = `
+        SELECT
+          fa.RecommendedQty,
+          fa.ValidationNotes,
+          dp.SKU,
+          dp.ProductName,
+          ds.StoreName  AS DestStoreName,
+          dw.WarehouseName AS SourceWarehouse
+        FROM dbo.FactAllocation fa
+        JOIN dbo.DimProduct dp  ON dp.ProductKey  = fa.ProductKey
+        JOIN dbo.DimStore   ds  ON ds.StoreKey    = fa.StoreKey
+        LEFT JOIN dbo.DimWarehouse dw ON dw.WarehouseKey = fa.WarehouseKey
+        WHERE fa.AllocationKey = ${parseInt(allocationKey)}
+      `;
+      const rows = await executeSql(detailsQ);
+      if (rows && rows.length > 0) {
+        details = rows[0];
+      }
+    } catch (e) {
+      console.error("Failed to fetch details for email:", e.message);
+    }
+
     // Send email using nodemailer
     try {
       console.log(`[EMAIL] Attempting to send email. USER=${process.env.EMAIL_USER}, PASS_SET=${!!process.env.EMAIL_PASS}`);
@@ -750,15 +805,66 @@ app.post('/api/recommendations/:id/status', async (req, res) => {
           pass: (process.env.EMAIL_PASS || '').replace(/\s+/g, '')
         }
       });
+      
+      const qtyStr = details ? details.RecommendedQty : "Unknown";
+      const srcStr = details ? (details.SourceWarehouse || 'Central Warehouse') : "Unknown Source";
+      const destStr = details ? details.DestStoreName : "Unknown Destination";
+      const skuStr = details ? `${details.SKU} - ${details.ProductName}` : "Unknown Product";
+      const reasonStr = (details && details.ValidationNotes) ? details.ValidationNotes : "No specific reasoning provided.";
+      const statusColor = newStatus === 'APPROVED' ? '#4caf50' : '#f44336';
+      
       const info = await transporter.sendMail({
         from: `"Cognitive Retail AI" <${process.env.EMAIL_USER}>`,
         to: "rija75217@gmail.com",
         subject: `[Retail AI] Recommendation ${newStatus}: Allocation #${allocationKey}`,
         html: `
-          <h2>Retail AI - Action Taken</h2>
-          <p>The allocation recommendation <strong>#${allocationKey}</strong> has been <strong>${newStatus}</strong> by a human reviewer.</p>
-          <hr/>
-          <p style="color: gray; font-size: 12px;">This is an automated message from the Cognitive Retail Command Center.</p>
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden;">
+            <div style="background-color: ${statusColor}; color: white; padding: 20px; text-align: center;">
+              <h2 style="margin: 0; font-size: 24px;">Action: ${newStatus}</h2>
+              <p style="margin: 5px 0 0 0; opacity: 0.9;">Allocation Recommendation #${allocationKey}</p>
+            </div>
+            <div style="padding: 24px; background-color: #fcfcfc;">
+              <p style="font-size: 16px; line-height: 1.5; color: #333; margin-top: 0;">
+                A human reviewer has <strong>${newStatus.toLowerCase()}</strong> the recommendation to transfer stock.
+              </p>
+              
+              <div style="background-color: white; border: 1px solid #e0e0e0; border-radius: 6px; padding: 16px; margin: 20px 0;">
+                <h3 style="margin-top: 0; font-size: 16px; color: #333; border-bottom: 1px solid #eee; padding-bottom: 8px;">Transfer Details</h3>
+                <table style="width: 100%; border-collapse: collapse;">
+                  <tr>
+                    <td style="padding: 8px 0; color: #666; width: 120px;">Product:</td>
+                    <td style="padding: 8px 0; font-weight: bold; color: #333;">${skuStr}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 8px 0; color: #666;">Quantity:</td>
+                    <td style="padding: 8px 0; font-weight: bold; color: #333;">${qtyStr} units</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 8px 0; color: #666;">From (Source):</td>
+                    <td style="padding: 8px 0; font-weight: bold; color: #333;">${srcStr}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 8px 0; color: #666;">To (Dest):</td>
+                    <td style="padding: 8px 0; font-weight: bold; color: #333;">${destStr}</td>
+                  </tr>
+                </table>
+              </div>
+
+              <div style="background-color: white; border: 1px solid #e0e0e0; border-radius: 6px; padding: 16px;">
+                <h3 style="margin-top: 0; font-size: 16px; color: #333; border-bottom: 1px solid #eee; padding-bottom: 8px;">AI Reasoning & Validation</h3>
+                <p style="font-size: 14px; line-height: 1.6; color: #555; margin-bottom: 0;">
+                  <em>${reasonStr}</em>
+                </p>
+              </div>
+            </div>
+            
+            <div style="background-color: #f0f2f5; padding: 15px; text-align: center; border-top: 1px solid #e0e0e0;">
+              <p style="color: #888; font-size: 12px; margin: 0;">
+                This is an automated message from the Cognitive Retail Command Center.<br>
+                Please do not reply to this email.
+              </p>
+            </div>
+          </div>
         `
       });
       console.log(`[EMAIL] ✅ Email sent successfully. MessageId: ${info.messageId}`);
