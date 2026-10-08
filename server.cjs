@@ -58,76 +58,28 @@ const config = {
 let isExecuting = false;
 let queryQueue = [];
 
-function executeSql(query) {
-  return new Promise((resolve, reject) => {
-    queryQueue.push({ query, resolve, reject });
-    processQueue();
-  });
-}
 
-function processQueue() {
-  if (isExecuting || queryQueue.length === 0) return;
-  isExecuting = true;
-  const { query, resolve, reject } = queryQueue.shift();
-  console.log("➡️ Starting query execution. Queue length:", queryQueue.length);
-  
-  const connection = new Connection(config);
-  connection.on('connect', (err) => {
-    if (err) {
-      console.error('❌ Connection Failed:', err.message);
-      reject(err);
-      isExecuting = false;
-      processQueue();
-      return;
-    }
-    console.log("🔌 Connected to SQL Server. Executing SQL...");
-    const request = new Request(query, (err, rowCount) => {
-      if (err) {
-        console.error("❌ Request Error:", err.message);
-        reject(err);
-      } else {
-        console.log("✅ Request Completed. Rows:", rowCount);
-      }
-      connection.close();
-      isExecuting = false;
-      processQueue();
-    });
-
-    const result = [];
-    request.on('row', (columns) => {
-      const row = {};
-      columns.forEach((column) => {
-        row[column.metadata.colName] = column.value;
-      });
-      result.push(row);
-    });
-
-    request.on('requestCompleted', () => {
-      resolve(result);
-    });
-
-    request.on('error', (err) => {
-      reject(err);
-    });
-
-    try {
-      connection.execSql(request);
-    } catch (execErr) {
-      reject(execErr);
-      connection.close();
-      isExecuting = false;
-      processQueue();
-    }
-  });
-  
+async function executeSql(query) {
   try {
-    connection.connect();
-  } catch (connErr) {
-    reject(connErr);
-    isExecuting = false;
-    processQueue();
+    let pgQuery = query.replace(/dbo\./g, 'public.');
+    pgQuery = pgQuery.replace(/SELECT\s+TOP\s+(\d+)(.*?)FROM/gis, "SELECT $2 FROM");
+    const topMatch = query.match(/SELECT\s+TOP\s+(\d+)/i);
+    if (topMatch) { pgQuery += ` LIMIT ${topMatch[1]}`; }
+    pgQuery = pgQuery.replace(/ISNULL\(/gi, 'COALESCE(');
+    if (pgQuery.includes("DATEADD(DAY, -7, CAST(CONVERT(VARCHAR, (SELECT MAX(DateKey)")) {
+        pgQuery = pgQuery.replace(/DATEADD\(DAY,\s*-7,\s*CAST\(CONVERT\(VARCHAR,\s*\(SELECT MAX\(DateKey\) FROM public\.FactWarehouseInventory\),\s*112\)\s*AS DATE\)\)/gi, 
+            "(TO_DATE((SELECT MAX(\"DateKey\") FROM public.\"FactWarehouseInventory\")::text, 'YYYYMMDD') - INTERVAL '7 days')");
+    }
+    const tables = ['DimProduct', 'DimStore', 'DimWarehouse', 'FactWarehouseInventory', 'FactSales', 'FactForecast', 'FactAllocation', 'AgentActionLog', 'GuardrailConfig', 'RegionSafetyStock', 'FactForecastAccuracy'];
+    for(const t of tables) { pgQuery = pgQuery.replace(new RegExp(`public\\.${t}`, 'gi'), `public."${t}"`); }
+    const { rows } = await pool.query(pgQuery);
+    return rows;
+  } catch (err) {
+    console.error("❌ Query Failed:", err.message, "\nQuery:", query);
+    throw err;
   }
 }
+
 
 // ---------------------------------------------------------------------------
 // API: /api/demand
